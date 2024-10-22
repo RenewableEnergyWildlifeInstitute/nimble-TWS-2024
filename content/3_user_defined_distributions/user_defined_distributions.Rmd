@@ -36,6 +36,8 @@ recalculate <- TRUE
 
 # Custom (user-defined) distributions: marginalize
 
+Example where we marginilize a variable to get a summed probability of another. We can start by writing the model that we want to be able to do. 
+
 * For an occupancy model, we can calculate the marginal probability of a detection history easily.
 * An occupancy model defines a distribution of capture-histories.
 * Say we want to use an occupancy distribution directly in a model 
@@ -52,7 +54,7 @@ nimbleCode({
 
 * The distribution is for a detection history (vector) `y[i, 1:J]`.
 * An argument is the detection probability vector `p[i, 1:J]`.
-* There will be no latent occupancy states (`z[i]`).
+* There will be no latent occupancy states (`z[i]`). 
 
 Set up occupancy example again
 =====
@@ -160,9 +162,11 @@ occupancy_inits <- function(){
 
 # Steps we will take
 
+Almost everything in nimble can be run in R (albeit very slowly). This can be useful for debugging and ensuring we are getting things right! Something pretty neat about occupancy modeling and capture recapture where latent state is utilized, the observations of 1 can be provided to z[i] so that the sampler see it as data and not as a space which needs to be explored.
+
 * Write dOcc (`dOcc_R`) as an R function: get our math and logic right.
 * Test/debug `dOcc_R`.
-* Convert `dOcc_R` to a `nimbleFunction` (`dOcc`).
+* Convert `dOcc_R` to a `nimbleFunction` (`dOcc`). It will look *almost* identical
 * Test/debug *uncompiled* `dOcc` **outside of a model** (in R).
 * Test/debug *uncompiled* `dOcc` in an **uncompiled nimble model** (in R).
 * Test/debug *uncompiled* `dOcc` in an **uncompiled nimble MCMC** (in R).
@@ -179,6 +183,8 @@ Hybrid math / code expression:
 \[
 P(y[i,1:J] ~|~ \psi, p[i, 1:J]) = \psi \prod_{j=1}^J \mbox{dbern}(y[i,j] ~|~ p[i,j]) + (1-\psi) I(\mbox{all } y[i, j] \mbox{ = 0})
 \]
+
+Writing an extension function needs to have a `log=...` parameter that flags whether prob or logprob should be returned. When called from a model, it will default to an assumed true, but can be built out for both for be general. 
 
 ```{r}
 dOcc_R <- function(x, probOcc, probDetect, len, log=FALSE) {
@@ -210,19 +216,19 @@ log(0.7 * prod(dbinom(y[9,], prob = c(0.5, 0.4, 0.3), size = 1)))
 
 # Convert `dOcc_R` to `nimbleFunction`
 
-`nimbleFunction`:
+What is a `nimbleFunction`?
 
 - Can be used in a model or algorithm
-- Can use models (e.g. an MCMC sampler) if it has "`setup`" code (not covered).
+- Can use models (e.g. an MCMC sampler) if it has "`setup`" code (not covered). More advanced version.
 - Can be compiled.
 - "compiled" means that nimble will generate C++, compile that, and make it available for use from R.
-- Supports much of R's math, distributions, and basic flow control.
+- Supports much of R's math, distributions, and basic flow control (for loops, if/then/else).
 - Does not support objects or functions of any type complexity (lists, environments, lapply)
-- Requires type annotation for inputs and outputs
+- Requires type annotation for inputs and outputs (scalar, vector, matrix, array). 0 index dimensions is a scalar (single number), 1 index dimension will be vector, 2: matrix, 3: 3-dimensional array, etc.
 
 ```{r}
 dOcc <- nimbleFunction(
-  run = function(x = double(1), # argument type declarations
+  run = function(x = double(1), # argument type declarations, double precision with 1 index dimension (vector)
                  probOcc = double(0),
                  probDetect = double(1),
                  len = integer(0, default = 0),
@@ -242,7 +248,7 @@ dOcc <- nimbleFunction(
       prob_x_given_unoccupied * (1 - probOcc)
     if (log)
       return(log(prob_x))
-    return(prob_x)
+    return(prob_x) # Need to be explicit about what the return is, required
   }
 )
 ```
@@ -255,6 +261,7 @@ Key points about `nimbleFunctions`:
 - can be used in a model or algorithm
 - can be compiled: nimble can generate C++, compile that, and make it available for use from R.
 - does not support objects or functions of any type complexity (lists, environments, lapply)
+- does not support objects or functions of any type complexity (lists, environments, lapply)
 
 Later: 
 - Can use models (e.g. an MCMC sampler) if it has "`setup`" code (not covered now).
@@ -266,6 +273,9 @@ dOcc(y[9,], probOcc = 0.7, probDetect = c(0.5, 0.4, 0.3), log = TRUE)
 ```
 
 ### We can debug it as needed in R.
+
+Debugging a function can use the browser to step through the target function if an error is caught. `Debug()` assigns a state to the function and can be turned off, `debugonce()` will only run it during the next call.
+
 ```{r, eval=FALSE}
 debugonce(dOcc)
 dOcc(y[9,], probOcc = 0.7, probDetect = c(0.5, 0.4, 0.3), log = TRUE)
@@ -338,6 +348,8 @@ occModel2 <- nimbleModel(occCode2,
 
 # Test the uncompiled `dOcc` in an uncompiled model.
 
+Test to make sure it actually works by assigning values to detection probabilities (p) and latent probability (psi).
+
 ```{r}
 occModel2$calculate()
 occModel2$calculate("y[9,]")
@@ -357,6 +369,8 @@ undebug(dOcc)
 ```
 
 # Test the uncompiled `dOcc` in an uncompiled MCMC.
+
+We can run just a few MCMC iterations within R ensure that the compiled function will work when it hits the MCMC section.
 
 ```{r}
 occMCMC2 <- buildMCMC(occModel2)
@@ -408,7 +422,8 @@ C_occMCMC2 <- compileNimble(occMCMC2, project = occModel2)
 
 # The full-blown versions of `dOcc`
 
-* `nimbleEcology` provides different versions (`dOcc_v`, `dOcc_s`) for time-varying vs time-constant survival and capture probabilities,.
+* `nimbleEcology` provides different versions (`dOcc_v` - Detection probability is a vector, `dOcc_s` - Detction probability is a scalar) for time-varying vs time-constant survival and capture probabilities.
+* More error trapping
 * Inclusion of a `len` (length) parameter is needed in some cases and so is included in all cases.
 * `nimbleEcology` provides marginalized versions of dynamic occupancy, capture-recapture (CJS), N-mixture, and hidden Markov models (HMMs).
 

@@ -42,7 +42,7 @@ In a hierarchical model, we typically have:
 - states: random effects or latent states.
 - data
 
-We are interested in the joint posterior distribution of the unknown variables (parameters and states)
+We are interested in the joint posterior distribution of the unknown variables (parameters and states). Parameters are random variables. Get the distribution of the data from integrating over the parameters and states. MCMC is a bit of a brute-force integration method. See more below.
 
 \[
 [\mbox{params, states | data}] = \frac{[\mbox{data | states, params}][\mbox{states | params}] [\mbox{params}]}{[\mbox{data}]}
@@ -59,7 +59,7 @@ We are interested in the joint posterior distribution of the unknown variables (
 Why Markov chain Monte Carlo
 =====
 
-- MCMC is a method that avoids integration by sampling proportional to the joint posterior distribution.
+- MCMC is a method that avoids integration by sampling proportional to the joint posterior distribution. 
 
 - Markov chain means that each new sample will only depend on the previous sample, and the chain will have properties that should result in generating samples from the posterior distribution.
 
@@ -85,6 +85,7 @@ Gibbs (conjugate) samplers
 - This only works for particular (*conjugate*) prior-posterior combinations.
 - Despite sounding simple, there is some computational cost.
 - Both JAGS and NIMBLE use conjugate samplers by default when available.
+- Wikipedia has a really good conjugate prior page/list. 
 
 Example, $y \sim Poisson(\lambda)$ and $\lambda \sim \text{gamma}(1,1)$.
 ```{r}
@@ -112,6 +113,8 @@ lines(density(samples), col = 'red')
 
 Adaptive Random-walk Metropolis-Hastings samplers
 =====
+
+Workhorse if you don't have conjugate sampling distributions. Propose a new value, and then jump proportional to the gains.
 
 ```{r, echo=FALSE}
 theta1 <- seq(0.5, 5, length = 200)
@@ -161,6 +164,8 @@ nextTargetDist <- 0.03 * dnorm(theta1, 2.4, 0.2)
 
 How NIMBLE's MCMC workflow works
 =====
+
+If you want any customization, use the 4-step process. The configureMCMC is the recipe for setting up samplers. To configure the sampler for given nodes, you would assign them after the buildMCMC step. 
 
 ![](img/nimble_basics.png)
 
@@ -291,7 +296,7 @@ Models as graphs
 
 NIMBLE models as objects
 =====
-When you create a NIMBLE model, it is an object in R.
+When you create a NIMBLE model, it is an object in R. This is a dynamically generated S3 object. 
 
 You can:
 
@@ -339,7 +344,7 @@ occ_model$isData('alpha0')
 Get node relationships
 =====
 
-"Dependencies" (or *dependents* or *children*) of "x'" are the nodes that depend on "x" (including itself), recursively, stopping at stochastic nodes.
+"Dependencies" (or *dependents* or *children*) of "x'" are the nodes that depend on "x" (including itself), recursively, stopping at stochastic nodes.Can be helpful in understanding nimble code and nimble objects. Can use to explore what depends on a given parameter.
 
 ```{r}
 occ_model$getDependencies("psi[5]")
@@ -389,6 +394,8 @@ Simulate will not over-write data values unless you include `includeData=TRUE`.
 MCMC efficiency: mixing and computation time are both important
 =====
 
+You want to make sure that it runs fast, but also want the chains to mix.
+
 Mixing refers to how well the MCMC explores the posterior ("target distribution").
 
 Computation time refers to the time taken by the MCMC.
@@ -405,6 +412,8 @@ We ignore setup time because it is less interesting.  We don't thin because it c
 
 Let's look at the occupancy example.
 
+# Assessing chain mixing
+
 Package `compareMCMCs`
 =====
 
@@ -415,7 +424,7 @@ Example: house martin state-space model
 
 This is from Bayesian Population Analysis (Kéry and Schaub).
 
-- House martin abundance estimates from 1990-2009
+- House martin abundance estimates from 1990-2009, includes the effect of previous abundance estimate
 - 6 additional years of posterior prediction are included
 - The model is density-independent.
 - There are no covariates.
@@ -427,7 +436,7 @@ Code and data
 ```{r}
 martin_code <- nimbleCode({
   # Priors and constraints
-  logN.est[1] ~ dnorm(5.6, 0.01)    # Prior for initial population size
+  logN.est[1] ~ dnorm(5.6, 0.01)    # Prior for initial population, true state of population that is unknown. Prior required for the first state because there is no prior state to the measured first.
   mean.r ~ dnorm(1, 0.001)          # Prior for mean growth rate
   sigma.proc ~ dunif(0, 1)          # Prior for sd of state process
   sigma2.proc <- pow(sigma.proc, 2)
@@ -448,7 +457,7 @@ martin_code <- nimbleCode({
     y[t] ~ dnorm(logN.est[t], tau.obs)
   }
   
-  # Population sizes on real scale
+  # Population sizes on real scale, not really part of the model. This is a derived parameter. Deriving parameters can during the MCMC process can slow down the model compared to calculating a single time, post-fitting.
   for (t in 1:T) {
     N.est[t] <- exp(logN.est[t])
   }
@@ -482,8 +491,8 @@ Two ways to write a state-space model
 
 Two equivalent ways to write state-space models:
 
-1. Process-noises are random variables.  States are deterministic given process noises. 
-2. States are random variables.
+1. Process-noises are random variables (above).  States are deterministic given process noises. 
+2. States are random variables which allows for less dependency (below).
 
 This model uses approach `1`.
 
@@ -525,7 +534,7 @@ We see that writing a state-space model this way will be very computationally co
 
 Rewrite the model
 =====
-Here is a more efficient way to write a state-space model.
+Here is a more efficient way to write a state-space model. This is statistically equivalent, but since the we incorporate the random noise within the logN.est variable (and therefore all logN.est nodes) rather than adding it after the node is estimated. This may also change the mixing.
 
 ```{r}
 martin_code_alt <- nimbleCode({
@@ -571,6 +580,9 @@ martin_model_alt$getDependencies('logN.est[10]')
 Updating each latent state (now population size, not process noise) requires calculations only one time-step later.
 
 Compare performance
+
+We can use these functions to look at the metrics associated with the a given model run.
+
 =====
 ```{r eval=recalculate}
 martin_orig <- compareMCMCs(
@@ -673,7 +685,7 @@ Samplers in nimble
 - random-walk (includes block/multivariate)
 - slice samplers (includes block/multivariate)
 - binary (for Bernoulli variables)
-- categorical (these are *costly*)
+- categorical (these are *costly*) for latent states that take integer values
 - posterior predictive sampler (for no dependencies)
 - elliptical slice sampler (for certain scalar or multivariate normal cases)
 - CAR (conditional autoregression model) normal sampler
@@ -693,4 +705,6 @@ Samplers in nimble
 ```
 
 
+# Side Note
 
+There are multiple thinning options for when there are large mismatches in the number of covariates vs latent states.
