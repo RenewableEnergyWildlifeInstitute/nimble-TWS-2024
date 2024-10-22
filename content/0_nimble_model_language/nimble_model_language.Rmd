@@ -22,21 +22,21 @@ library(coda)
 recalculate <- TRUE
 ```
 
-Overview
-=====
+# Overview
 
 This module covers the basics of writing models in NIMBLE's model language.
 
 The model language is a dialect of the BUGS language, which was also adopted by JAGS.
 
+BU**GS** & JA**GS** = "Gibbs Sampling" has become a confusing term because its meaning has diverged.
+
 Later workshop modules will assume familiarity with the model language.
 
 Resources:
 
-- Our [Documentation](https://r-nimble.org/documentation-2) page, which links to our User Manual, our GitHub workshop repositories, and a variety of papers and other links.
+-   Our [Documentation](https://r-nimble.org/documentation-2) page, which links to our User Manual, our GitHub workshop repositories, and a variety of papers and other links.
 
-A simple linear regression model
-=====
+# A simple linear regression model
 
 Here is some model code:
 
@@ -45,20 +45,21 @@ library(nimble)
 linear_model_code <- nimbleCode({
   intercept ~ dnorm(0, sd = 100) # vague priors
   slope ~ dnorm(mean = 0, sd = 100)
-  sigma ~ dunif(min = 0, max = 100)
+  sigma ~ dunif(min = 0, max = 100) # Sigma is uniform since i tneeds to be positive, also used as standard deviation rather than precision
   for(i in 1:N) {
     predicted_y[i] <- intercept + slope*x[i]
-    y[i] ~ dnorm(predicted_y[i], sd = sigma)
+    y[i] ~ dnorm(predicted_y[i], sd = sigma) #y[i] is observed, but will also have a probabilistic value with it, log probability
   }
 })
 ```
 
-- Each line of code is a **declaration** of a relationship among **nodes**.
-- `<-` declares a **deterministic node**.
-- `~` declares a **stochastic nodes**.
-- `dnorm` and `dunif` are for normal and uniform distributions.
-- *The order of the code does not matter!* `nimble` will figure out the order of calculations from seeing what depends on what. (This is called a *declarative* language; most languages are *imperative*, meaning the code is an ordered sequence of commans.)
-- One could instead use:
+-   Each line of code is a **declaration** of a relationship among **nodes**.
+-   `<-` declares a **deterministic node**.
+-   `~` declares a **stochastic nodes**.
+-   `dnorm` and `dunif` are for normal and uniform distributions.
+-   *The order of the code does not matter!* `nimble` will figure out the order of calculations from seeing what depends on what. (This is called a *declarative* language; most languages are *imperative*, meaning the code is an ordered sequence of commadns.)
+-   Important note is that
+-   One could instead use:
 
 ```{r, eval=FALSE}
 nimbleCode({
@@ -69,31 +70,33 @@ nimbleCode({
 })
 ```
 
-(Internally, nimble will turn the second version into the first version.)
+(Internally, nimble will turn the second version into the first version.) Creates "lifted nodes" during the interpretation process
 
-Building a model object from the code
-=====
-The mode code is only that: code.
+# Building a model object from the code
+
+The model code is only that: code.
 
 To turn code into an object, we need to provide some combination of:
 
-- `constants` (like `N` or possibly `x`)
-- `data` (like `y` or possibly `x`)
-- `inits` (initial values for any parameters)
+-   `constants` (like `N` or possibly `x`) are required to make sense of the
+-   `data` (like `y` or possibly `x`). Can give the data later
+-   `inits` (initial values for any parameters)
 
 Here is an example:
+
 ```{r, eval=recalculate}
 set.seed(1) # make this reproducible
 x <- rnorm(10)
 y <- rnorm(10)
 linear_model <- nimbleModel(linear_model_code,
-                            constants = list(N = 10),
-                            data = list(y = y, x = x))
+                            constants = list(N = 10), #Define the constant that is used in the nimbleCode
+                            data = list(y = y, x = x)) 
 linear_model$y
 ```
 
-Simulating and fitting data
-=====
+Note: Can choose not to provide data here, but will need to set the data at some point either using `model$y <- data$y` or `model$setdata(y = data$y, x = data$x)`. The setData **method** is applicable to any Nimble Model.
+
+# Simulating and fitting data
 
 Most of this module is about ways to write model code. We won't make worked examples of all cases. But here is how you can simulate data and then fit it with MCMC for any case.
 
@@ -110,22 +113,24 @@ linear_model$y
 ```
 
 Fit the model
+
 ```{r eval=recalculate}
 samples <- nimbleMCMC(model = linear_model)
 summary(samples)
 ```
 
 An alternative if you are not simulating data is to skip building the model and let `nimbleMCMC` do that, like this:
+
 ```{r eval=FALSE}
 samples <- nimbleMCMC(linear_model_code,
                       constants = list(N = 10),
                       data = list(y = y, x = x))
 ```
 
-Handling non-normal data and associated link functions
-=====
+# Handling non-normal data and associated link functions
 
 Option 1:
+
 ```{r, eval=FALSE}
 nimbleCode({
   # Incomplete code snippet
@@ -137,6 +142,7 @@ nimbleCode({
 ```
 
 Option 2:
+
 ```{r, eval=FALSE}
 nimbleCode({
   # Incomplete code snippet
@@ -147,16 +153,16 @@ nimbleCode({
 
 (Internally, nimble will turn the second version into the first version.)
 
+# Handling factors (groups)
 
-Handling factors (groups)
-=====
 Say we have a factor with 3 levels (groups) and 4 data points for each level.
 
 Say we want a different intercept for each level (group).
 
 ### Option 1: Nested indexing
 
-Setup:
+Setup: Ensure that the grouping variable is identified. Groups need to be integers with indexing starting at 1. Grouping data needs to be in the constants section (usually). If grouping data are put as variable, they will be interpreted as uncertain assignment to the group.
+
 ```{r, eval=recalculate}
 group <- c(1,1,1,1,2,2,2,2,3,3,3,3)
 ```
@@ -165,10 +171,11 @@ group <- c(1,1,1,1,2,2,2,2,3,3,3,3)
 y <- rnorm(12)
 x <- rnorm(12)
 linear_model_code <- nimbleCode({
-  for(i in 1:3)
-    intercept[i] ~ dnorm(0, sd = 100) # vague priors
+  for(i in 1:3) #For loop to index the integer representation of the groups 
+    {intercept[i] ~ dnorm(0, sd = 100)} # vague priors
   slope ~ dnorm(mean = 0, sd = 100)
   sigma ~ dunif(min = 0, max = 100)
+  
   for(i in 1:N) {
     y[i] ~ dnorm(intercept[group[i]] + slope*x[i], sd = sigma)
   }
@@ -180,14 +187,14 @@ linear_model <- nimbleModel(linear_model_code,
 
 **It is important to put `groups` in `constants`, not `data`**.
 
-Handling factors (groups) (cont)
-=====
+# Handling factors (groups) (cont)
 
 ### Option 2: Dummy variables and model matrix
 
 We will also include `x` in the model matrix.
 
-Somehow make a matrix of dummy variables. I'll do it with `model.matrix`
+Somehow make a matrix of dummy variables. I'll do it with `model.matrix`. In this example, removing the implicit intercept `... -1`
+
 ```{r, eval=recalculate}
 X <- model.matrix(y ~ x + as.factor(group) - 1)
 attributes(X) <- NULL
@@ -196,9 +203,10 @@ X
 ```
 
 ```{r, eval=recalculate}
+#Standard model matrix way of writing models
 linear_model_code <- nimbleCode({
   for(i in 1:4)
-    beta[i] ~ dnorm(0, sd = 100) # vague priors
+    beta[i] ~ dnorm(0, sd = 100) # vague priors, the only line used in the for loop
   sigma ~ dunif(min = 0, max = 100)
   predicted_y[1:N] <- (X[1:12, 1:4] %*% beta[1:4])[,1]
   for(i in 1:N) {
@@ -213,10 +221,11 @@ linear_model <- nimbleModel(linear_model_code,
 
 **Option 1** and **Option 2** are statistically equivalent but may (will) give different performance in algorithms. For example, MCMCs will be able to do fewer calculations from Option 1 because the model will know exactly which `y[i]` depend on which `intercept[i]`. That will not be the case from the matrix multiplication `(X[1:12, 1:4] %*% beta[1:4])` because that declares a single (non-scalar) relationship.
 
+Option 2 may be more useful in an instance with many factor level variables since it is simple to create a model matrix. However, this will come with the computational tradeoff.
+
 In either option you can use different *contrasts*. E.g., having a "reference" group leads to different contrasts.
 
-Random effects
-=====
+# Random effects
 
 Model code for random effects look a lot like that for fixed effects, with the addition of a shared prior.
 
@@ -241,10 +250,9 @@ linear_model <- nimbleModel(linear_model_code,
                             data = list(y = y))
 ```
 
-Random effects (continued)
-=====
+# Random effects (continued)
 
-Here is a **centered** version of the above example.
+Here is a **centered** version of the above example. Has the intercept as that mean.
 
 ```{r, eval=recalculate}
 linear_model_code <- nimbleCode({
@@ -264,10 +272,9 @@ linear_model <- nimbleModel(linear_model_code,
                             data = list(y = y))
 ```
 
-Random effects (continued)
-=====
+# Random effects (continued)
 
-And here is a fully uncentered version. (The first version might be called "partially" centered.)
+And here is a fully uncentered version. (The first version might be called "partially" centered.) This can lead to good mixing in Hamiltonian Monte-Carlo (knowledge from the
 
 ```{r, eval=recalculate}
 linear_model_code <- nimbleCode({
@@ -288,12 +295,11 @@ linear_model <- nimbleModel(linear_model_code,
 
 The various ways to write random effects are statistically equivalent but can (will) result in different MCMC mixing and posterior correlations (or performance of other algorithms).
 
-Random efects can also be set up with a model matrix and matrix multiplication. Again that would reduce nimble's capability to determine what is really connected to what. 
+Random efects can also be set up with a model matrix and matrix multiplication. Again that would reduce nimble's capability to determine what is really connected to what.
 
 And of course one can also set up slopes (or coefficients) as random effects with the same concepts.
 
-Occupancy models (discrete latent states)
-=====
+# Occupancy models (discrete latent states)
 
 Here is a very basic occupancy model with one covariate for detection (`w`) and one for occurrence (`x`)
 
@@ -338,8 +344,7 @@ occ_model$setData('y')
 
 Occupancy models can include groups and random effects using the ideas above.
 
-State-space models (time-series with process noise and observation error)
-=====
+# State-space models (time-series with process noise and observation error)
 
 We'll use a simple linear auto-regressive state-space model.
 
@@ -375,8 +380,7 @@ ss_model$simulate(sim_nodes, includeData = TRUE)
 ss_model$y
 ```
 
-Discrete Markov models, also illustrating constraints
-=====
+# Discrete Markov models, also illustrating constraints
 
 Say `z[t]` is a discrete state taking integer values 1-3. Say `A` is a transition matrix such that `A[i,j]` is the probability of changing from state `i` to `j`. Say `z[t]` is observed correctly.
 
@@ -418,7 +422,6 @@ mm_model$z
 mm_model$A
 ```
 
-Documentation on available functions and distributions
-=====
+# Documentation on available functions and distributions
 
 Go to [Documentation](https://r-nimble.org/documentation-2) and discuss.
