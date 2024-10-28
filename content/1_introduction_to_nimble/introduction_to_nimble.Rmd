@@ -84,13 +84,13 @@ Use simple models to introduce and work on concepts for the model language.
         -   `vegHt` = Vegetation height: logistic effect on occupancy probability
         -   `wind` = Wind speed: logistic effect on detection probability
 
-# Occupancy example: Load the package
+# - Occupancy example: Load the package
 
 ```{r}
 library(nimble)
 ```
 
-# Occupancy example: Write the model code **in R**
+# - Occupancy example: Write the model code **in R**
 
 -   Slightly modified from AHM.
 -   Derived quantities are removed.
@@ -122,7 +122,7 @@ Section10p4_code <- nimbleCode({
 )
 ```
 
-# Occupancy example: Simulate data
+# - Occupancy example: Simulate data
 
 (This code is modified from AHM. It is here for completeness.)
 
@@ -206,7 +206,7 @@ occupancy_inits <- function(){
 
 ```
 
-# Occupancy Example: One step to results with `nimbleMCMC`
+# - Occupancy Example: One step to results with `nimbleMCMC`
 
 Start from:
 
@@ -227,7 +227,7 @@ summary(results$samples) ## from coda
 results$WAIC
 ```
 
-# Occupancy Example: Look at results:
+# - Occupancy Example: Look at results:
 
 There are many packages for summarizing and plotting MCMC samples. NIMBLE does not try to re-invent these wheels.
 
@@ -314,7 +314,18 @@ code <- nimbleCode({
   sigma ~ dhalfflat()
   for(i in 1:10) {
     x[i] ~ dnorm(mu, sd = sigma)
+  })
+
+mymod <- nimbleCode({
+  
+  #Walk params
+  mu ~dnorm(0, sd =100) #This is the prior distribution that the mean is drawn from
+  sigma ~ dhalfflat() #prior for the standarad devistion (forces 0 to infinity and is an improper prior)
+  
+  for (i in 1:10) { #only 10 draws, could make it 1:N if N is in the setup code, or data
+    x[i] ~ dnorm(mu, sd = sigma) 
   }
+})
 ```
 
 ```{r eval = FALSE}
@@ -325,6 +336,7 @@ nimbleCode({
   }
   sigma ~ dhalfflat()
   mu ~ dnorm(0, sd = 100)
+})
 ```
 
 # Distinction between data and constants
@@ -347,7 +359,7 @@ nimbleCode({
 
 -   Data and constants can be provided together **in the `constants` list**.
 -   NIMBLE will usually disambiguate data when it is provided in the constants list.
--   For backwards compatability with JAGS
+-   For backwards compatability with JAGS, not recommended when building fresh.
 
 
 ### What are covariates and other non-parameters/non-observations?
@@ -449,10 +461,10 @@ We can write a distribution to do this (which in this case is provided in nimble
 occCode2 <- nimbleCode({
   # Priors
   mean.p ~ dunif(0, 1)         # Detection intercept on prob. scale
-  alpha0 <- logit(mean.p)      # Detection intercept
+  alpha0 <- logit(mean.p)      # Detection intercept, deterministic node
   alpha1 ~ dunif(-20, 20)      # Detection slope on wind
   mean.psi ~ dunif(0, 1)       # Occupancy intercept on prob. scale
-  beta0 <- logit(mean.psi)     # Occupancy intercept
+  beta0 <- logit(mean.psi)     # Occupancy intercept, deterministic
   beta1 ~ dunif(-20, 20)       # Occupancy slope on vegHt
   
   # Likelihood
@@ -498,7 +510,7 @@ nimbleCode({
   # Code snippets
   # define normal random effects
   alpha ~ dnorm(0, sd = 100)
-   sigma_group ~ dunif(0, 100)
+  sigma_group ~ dunif(0, 100)
   for(i in 1:num_groups) b[i] ~ dnorm(alpha, sd = sigma_group)
 
   # Use random effects in a regression model

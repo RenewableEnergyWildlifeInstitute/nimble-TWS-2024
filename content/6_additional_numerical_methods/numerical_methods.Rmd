@@ -28,6 +28,8 @@ makeplot <- !recalculate
 Laplace approximation
 ====
 
+- What is it? It is frequently used and is important for random effects.
+- The hessian is the second order derivatives that help define the curvature around the mode. The inverse of the hessian is where we get the covariance matrix from
 - Laplace approximation (LA) is a fast method (often accurate) for approximating definite integrals.
 - In statistics, LA is often used to approximate marginal likelihoods / posterior distributions
 - When we have random effects, one way to perform maximum likelihood is to marginalize (integrate) out the random effects.
@@ -52,8 +54,8 @@ Laplace approximation
 
 We see Laplace approximation used in software such as 
 
-- INLA
-- TMB
+- INLA: Posterior approximations, works really well for spatial approximation
+- TMB: If there are random effects, Laplace approximation is automatically applied
 - glmmTMB
 - lme4
 - and many more.
@@ -61,7 +63,7 @@ We see Laplace approximation used in software such as
 Laplace in NIMBLE
 ====
 
-- In NIMBLE, an LA algorithm can be built using **`buildLaplace`** as follows:
+- In NIMBLE, an LA algorithm can be built using **`buildLaplace`** as follows: Theta are the parameters and mu are the random effects. Outer maximization is focused on maximizing thetas while inner maximization is on the m-hats (mode)
 ```{r,eval = FALSE }
 laplace <- buildLaplace(model, # model object, the only compulsory input
                         paramNodes, # top-level stochastic nodes
@@ -75,7 +77,7 @@ laplace <- buildLaplace(model, # model object, the only compulsory input
 ```{r, eval = FALSE}
 Claplace <- compileNimble(laplace, project = model)
 ```
-- Run it:
+- Run it: Which gives maximum likelihood estimation
 ```{r, eval = FALSE}
 res <- runLaplace(laplace, # Laplace algorithm
                   pStart,  # Start value for MLE
@@ -89,7 +91,7 @@ res <- runLaplace(laplace, # Laplace algorithm
 Occupancy Model with Random Effects
 ====
 
-Simulate some data;
+Simulate some data; Nested sites within locations.
 ```{r}
 set.seed(123)
 ## number of sites
@@ -113,6 +115,8 @@ for( i in 1:nSites ){
   }
 }
 ```
+
+In frequentest land, the priors are used to define the domain over which a parameter can exist.
 
 ```{r, eval = FALSE}
 occmodel <- nimbleCode({
@@ -147,7 +151,7 @@ model <- nimbleModel(occmodel,
 cmodel <- compileNimble(model)
 laplace <- buildLaplace(model)
 
-pars <- laplace$getNodeNamesVec()
+pars <- laplace$getNodeNamesVec() # Return 
 laplace$calcLogLik(p = values(model, pars))
 
 claplace <- compileNimble(laplace, project = model)
@@ -183,7 +187,7 @@ Adaptive Gauss-Hermite Quadrature (AGHQ) is a generalization of Laplace that inc
 
 Available as `buildAGHQ`, or as part of `Laplace`.
 
-Good check to see if Laplace is accurate.
+Good check to see if Laplace is accurate. Increase the order of the approximiation can tell you if there are issues with your optimization approach.
 
 ```{r, eval = FALSE}
 claplace$updateSettings(nQuad = 1)

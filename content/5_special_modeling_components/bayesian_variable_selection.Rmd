@@ -42,7 +42,7 @@ Use linear regression for simplicity.
 ```{r}
 library(nimble)
 lmCode <- nimbleCode({
-  psi ~ dunif(0,1)   # prior on inclusion probability
+  psi ~ dunif(0,1)   # prior on inclusion probability, probability the variable is included in the model
   sigma ~ dunif(0, 20)
   for(i in 1:numVars) {
     z[i] ~ dbern(psi) # indicator variable
@@ -50,7 +50,7 @@ lmCode <- nimbleCode({
     zbeta[i] <- z[i] * beta[i]  # indicator * beta
   }
   for(i in 1:n) {
-    pred.y[i] <- inprod(X[i, 1:numVars], zbeta[1:numVars])
+    pred.y[i] <- inprod(X[i, 1:numVars], zbeta[1:numVars]) #Matrix multiplication, one row at a time,
     y[i] ~ dnorm(pred.y[i], sd = sigma)
   }
 })
@@ -60,7 +60,8 @@ lmConstants <- list(numVars = 15, n = 100, X = X)
 lmModel <- nimbleModel(lmCode, constants = lmConstants)
 ```
 
-### Simulate data using `nimble` model.
+### Simulate data using `nimble` model
+Simulating data within the model itself is a major benefit to the NIMBLE approach since it ensures consistency
 ```{r}
 true_betas <- c(c(0.1, 0.2, 0.3, 0.4, 0.5),
                 rep(0, 10))
@@ -101,6 +102,8 @@ Look at default nimble results
 =====
 
 ### Look at beta[1]
+
+See how the model is just following it's prior. There is a lot of variance in the estimate itself, check the y-axis
 ```{r}
 inds <- seq(50000, 60000, by=10) ## Look at arbitrary 1001 iterations thinned
 plot(samples_nimble[inds,'beta[1]'])
@@ -151,21 +154,24 @@ Summary of Mixing problems (the main issue)
           
 - Conventional solution in BUGS/JAGS language: Use informative prior for `beta[i]` to avoid these problems.  This amounts to changing the model because the MCMC implementation has a problem, and that is never ideal.
 
-### Wasteful computation (a secondary issue)
+### Wasteful computation (a secondary issue and curse word)
 - When `z[i] = 0`, we'd like to not be wasting computation on `beta[i]`.
 
 Solution: Reversible Jump MCMC
 =====
 
 - RJMCMC is a method for sampling across different models.
+- Proposing, accepting, and rejecting
 - Specifically it is about sampling between different numbers of dimensions.
 - We don't change the actual nimble model object, but we turn on and off which dimensions are sampled.
 - Implementation, like all samplers, is written using `nimbleFunction`s.
+- Make a model with all coefficients, but use the RJMCMC ot treat is as though we are reducing the model and removing coefficients 
 
 RJMCMC for variable selection in nimble
 =====
 
 - Update an MCMC configuration to use RJMCMC.
+- If indicator is 1, propose to remove the coefficient from the model and ignore until, to put a coeffieicient back into the model, there needs to be a proposal for a non-0 indicator variable
 
 ```{r}
 # make a new copy of the model to be totally independent
@@ -175,7 +181,7 @@ MCMCconfRJ$addMonitors('z')
 configureRJ(MCMCconfRJ,
             targetNodes = 'beta',
             indicatorNodes = 'z',
-            control = list(mean = 0, scale = .2))
+            control = list(mean = 0, scale = .2)) 
 MCMCRJ <- buildMCMC(MCMCconfRJ)
 ```
 

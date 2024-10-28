@@ -54,7 +54,7 @@ dd_code1 <- nimbleCode({
   # s[1:2] will be the latent location
   # rho will be a decay parameter 
   for(i in 1:num_det) {
-    d2[i] <- (s[1] - x[i,1])^2 + (s[2] - x[i,2])^2
+    d2[i] <- (s[1] - x[i,1])^2 + (s[2] - x[i,2])^2 #Distance calculation is in the model which means that it is done during the MCMC process
     w[i] <- exp(-d2[i] / rho) 
   }
 })
@@ -85,7 +85,7 @@ Cdd_model1 <- compileNimble(dd_model1)
 
 # Example of `nimbleRcall` (cont)
 
-Let's say that instead of the simple case here, we really have something so involved that we need to call R to do it.
+Let's say that instead of the simple case here, we really have something so involved that we need to call R to do it. We can create an R function instead (calc_w), which we then have set up to be understood within the compiled model as a pass off to a specific R function (R_calc_w). When the pass off is made, it passes back to the R interpreter and has an expected return
 
 ```{r, eval=recalculate}
 calc_w <- function(s, x, rho) {
@@ -148,9 +148,11 @@ dd_model3$w
 
 So far we have seen the simple version of nimbleFunctions. They use a special subset of R-like syntax and are strongly typed (unlike R in general).
 
-When a nimbleFunction contains a `setup` function, it can retain variables between calls. (Internally, it becomes a class definition, not simply a function.)
+When a nimbleFunction contains a `setup` function, it can retain variables between calls. (Internally, it becomes a class definition, not simply a function.) Any variable within a setup function can be used within the run function.
 
 Here is a toy example (with no model).
+
+1:5 becomes the argument which is passed to the setup function. When a nimbleFunction with setup function is run, it can be saved with that particular setup. Then, the run functions can be accessed using the $ notation
 
 ```{r, eval=recalculate}
 foo <- nimbleFunction(
@@ -162,7 +164,7 @@ foo <- nimbleFunction(
     returnType(double(1))
   }
 )
-foo1 <- foo(1:5)
+foo1 <- foo(1:5) #1:5 becomes the arcument which is passed to the setup function. 
 foo1$run(2)
 foo2 <- foo(101:105)
 foo2$run(2)
@@ -176,7 +178,7 @@ We can have more functions like `run` called "methods" by providing a `methods` 
 
 # nimbleFunctions that use `setup` code (cont)
 
-Let's compile `foo1` and `foo2`
+Let's compile `foo1` and `foo2`. These are the instances that you have created with a valid setup.
 
 ```{r, eval=recalculate}
 comp <- compileNimble(foo1, foo2)
@@ -188,7 +190,7 @@ foo2$run(2)
 
 # nimbleFunctions that use models.
 
-Now let's make a nimbleFunction that uses a model. We'll make a simple log likelihood calculator (assuming no need to integrate over random effects or latent states).
+Now let's make a nimbleFunction that uses a model. We'll make a simple log likelihood calculator (assuming no need to integrate over random effects or latent states). We can use the `methods =` section to establish new methods 
 
 ```{r, eval=recalculate}
 logLik_NF <- nimbleFunction(
@@ -244,7 +246,7 @@ m <- nimbleModel(
 )
 
 m$getNodeNames(topOnly=TRUE)
-my_ll <- logLik_NF(m)
+my_ll <- logLik_NF(m) #Attaches the method created to the model object.
 my_ll$calcLogLik(c(.3, .3))
 # We could do this uncompiled for debugging (but slow)
 MLE <- optim(c(0,0), my_ll$calcLogLik, control=list(fnscale = -1))

@@ -39,9 +39,16 @@ Agenda for this module
 
 # Intrinsic conditional autoregressive (ICAR) models
 
+So, you have spatial data and need to account for the spatial autocorrelation that cannot be explained by covariates. Need a random effect for each spatial location and these REs need to be correlated. CAR model makes a valid spatial model that is set up to sample one location at a time for MCMC.
+
+X[i]: x at location i
+x[-i] : x at all other locations
+
 Intuitively expressed as one-at-a-time conditionals:
 
 $$ x_i|x_{-i} \sim N\left(\frac{1}{n_i} \sum_{j\in N_i} x_j, \frac{1}{n_i \tau}\right) $$
+
+This ends up being a cyclic graph, and we think that we can't have it work, but some really smart people have made it work.
 
 The prior for each $x_i$ has:
 
@@ -61,7 +68,7 @@ NIMBLE's MCMC configuration will use a special sampler that updates each `x[i]` 
 
 # ICAR (cont): What does 'intrinsic' mean?
 
-This is an **improper prior** because it does not integrate to one.
+This is an **improper prior** because it does not integrate to one. (D half flat is also an improper prior)
 
 The value of the prior doesn't change if you shift all the $x_{i}$ values by a constant.
 
@@ -77,7 +84,7 @@ This is also weird because the marginal prior variance of each $x_i$ is infinite
 
 $$ x_i \sim N(\rho x_{i-1}, \sigma^2) $$
 
-which is generally frowned upon in the time series literature. But it's often recommended in the spatial context.)
+which is generally frowned upon in the time series literature. But it's often recommended in the spatial context.) 
 
 # ICAR (cont):  Neighborhood/adjacency information
 
@@ -115,7 +122,7 @@ There are various NIMBLE and R functions for producing `adj` and `num` from shap
   - weights for each pair of neighbors (`weights`), 
   - the number of neighbors for each region (`num`) (to unpack `adj` correctly).
 
-- Modeled mean of the Poisson counts includes an offset for the expected count (e.g. population size). 
+- Modeled mean of the Poisson counts includes an offset for the expected count (e.g. population size). Has a random effect on the log scale
 - Covariate: the percentage of people defined as income-deprived in each region.
 
 
@@ -194,7 +201,7 @@ code <- nimbleCode({
   x[1:N] ~ dcar_normal(adj[1:L], weights[1:L], num[1:N], tau, zero_mean = 0)
   # likelihood
   for(i in 1:N) {
-    lambda[i] <- expected[i] * exp(beta*z[i] + x[i])
+    lambda[i] <- expected[i] * exp(beta*z[i] + x[i]) #z[i] is the explanatory variable, expected is likely the population for each region
     y[i] ~ dpois(lambda[i])
   }
 })
@@ -256,7 +263,7 @@ One can avoid the improper ICAR prior by using what looks like a time series AR(
 
 $$ x_i|x_{-i} \sim N \left(\frac{1}{n_i} \rho \sum_{j\in N_i} x_j, \frac{1}{n_i \tau}\right) $$
 
-The presence of $\rho$ causes the prior to be proper (under certain constraints on $\rho$).
+The presence of $\rho$ causes the prior to be proper (under certain constraints on $\rho$). This makes it a stationary, spatial, random process.
 
 This looks more like the usual AR(1) model with the somewhat non-intuitive property that the prior mean is a proportion of the average of the neighbors. The result is a model where the relationship of $\rho$ to the spatial correlation structure is not intuitive and even modest spatial correlation results in very large values of $\rho$. 
 
@@ -489,7 +496,7 @@ plot(respiratorydata_sp, col = col, border = 'grey', lwd = 0.4)
 
 # Non-parametric distributions
 
-Mixtures of normal distributions can produce a very wide range of distributions.
+Mixtures of normal distributions can produce a very wide range of distributions. Two flavors: non-parametric tests & a model fitting way to fit an arbitrary line through things. An arbitrary mixture of normal distributions can present an extremely flexible way to fit non-parametric distributions.
 
 Here are two examples:
 
@@ -529,7 +536,7 @@ pdf <- x |> lapply(\(x) sum(weights * dnorm(x, centers, sds))) |> unlist()
 }
 ```
 
-We want to estimate these.
+We want to estimate these. To draw from the non-parametric distributions, we can randomly select which of the mixture pieces we should draw from, and then draw from it.
 
 See for example [Turek, Wehrhahn and Gimenez (2021). Bayesian non-parametric detection heterogeneity in ecological models.](https://link.springer.com/article/10.1007/s10651-021-00489-1)
 
@@ -552,7 +559,7 @@ hist(y)
 
 # Bayesian estimation of non-parametric distributions
 
-Methods are often related to a "Dirichlet process" (DP) (not the same as a Dirichlet distribution).
+Methods are often related to a "Dirichlet process" (DP) (not the same as a Dirichlet distribution). (Deer-ish-lay)
 
 ### Chinese restaurant process
 
@@ -572,9 +579,10 @@ and the probability the customer sits at table $k$ (where there are $n_k$ people
 
 $$ \frac{n_k}{i-1+\alpha} $$
 
-- Each table represents a normal distribution in the mixture.
+- Each table represents a normal distribution in the mixture. Tables with more people are likely to attract the new individuals.
 - The number of customers is related to the weight for that mixture component. (The weight is not written explicitly.)
 - There is a mean and standard deviation for each mixture component.
+- These are the conjugate prior of the Dirichlet distribion and the multinomial as N appraoches infinity.
 
 # Fitting a CRP model
 
@@ -584,11 +592,11 @@ This model code comes from the nimble User Manual (section 10.2).
 
 ```{r, eval=recalculate}
 code <- nimbleCode({
-  z[1:N] ~ dCRP(alpha, size = N)
+  z[1:N] ~ dCRP(alpha, size = N) # Follows the chineese restaurant process.Alpha is a concentration parameter, the larger alpha is, the more clustered things are.
   alpha ~ dgamma(1, 1)
   for(i in 1:M) {
     thetatilde[i] ~ dnorm(0, var = 100)
-    s2tilde[i] ~ dinvgamma(1, 1)
+    s2tilde[i] ~ dinvgamma(1, 1) #S squared tilde, conjugate prior for a variance
   }
   for(i in 1:N) 
     y[i] ~ dnorm(thetatilde[z[i]], var = s2tilde[z[i]])  
@@ -617,13 +625,13 @@ hist(samples[,'alpha'])
 hist(samples[,'z[1]'])
 ```
 
-It can be difficult to see the BNP distribution itself. There is a tool for that: (It will use `compileNimble` and take a minute.)
+It can be difficult to see the BNP distribution itself. There is a tool for that: (It will use `compileNimble` and take a minute.) This accesses the 
 
 ```{r, eval = recalculate}
 DPsamples <- getSamplesDPmeasure(comp$mcmc)
 ```
 
-`DPsamples` is a *list* matrices, one for each row of the MCMC samples. Let's look at a few.
+`DPsamples` is a *list* matrices, one for each row of the MCMC samples. Let's look at a few. This gives us the means and variances for the different normal distributions that were used/estimated for each MCMC pull to characterize the non-parametric approach.
 
 ```{r, eval=recalculate}
 DPsamples[[500]]
